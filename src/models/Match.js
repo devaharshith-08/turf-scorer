@@ -44,9 +44,10 @@ const MatchSchema = new mongoose.Schema({
         balls: [
           {
             sequenceId: { type: String, required: true },
-            type: { type: String, enum:['run','wide','noball','legbye','wicket'], required: true },
+            type: { type: String, enum:['run','wide','noball','legbye','bye','wicket'], required: true },
             runs: { type: Number, default: 0 },
             isWicket: { type: Boolean, default: false },
+            isFreeHit: { type: Boolean, default: false },
             dismissal: { type: String, enum: ['bowled', 'caught', 'runout', null], default: '' },
             batsmanOnStrike: { type: String, required: true },
             bowler: { type: String, required: true },
@@ -75,10 +76,24 @@ const MatchSchema = new mongoose.Schema({
       type: String,
       default: null,
     },
+    // Set ONLY when status transitions to 'completed' (in the update route).
+    // TTL index below tells MongoDB to auto-delete this document 36 hours
+    // after completedAt is set. 'setup' and 'live' matches never have this
+    // field set, so they are never touched by the TTL sweep.
+    completedAt: {
+      type: Date,
+      default: null,
+    },
 
 },
     { timestamps: true }
 );
+
+// TTL index: MongoDB's background task (runs ~every 60s) deletes any
+// document where completedAt is older than 36 hours (36 * 60 * 60 = 129600
+// seconds). Documents where completedAt is null are never matched/deleted
+// by this index — only docs that actually have a Date value there.
+MatchSchema.index({ completedAt: 1 }, { expireAfterSeconds: 129600 });
 
 const Match = mongoose.models.Match || mongoose.model('Match', MatchSchema);
 

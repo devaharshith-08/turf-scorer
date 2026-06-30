@@ -136,3 +136,126 @@ export function getEconomy(runsConceded, overs) {
   const oversBowled = legalBalls / 6;
   return Math.round((runsConceded / oversBowled) * 100) / 100;
 }
+
+/**
+ * Returns "how out" display text for a single batsman in a single innings,
+ * derived from the innings' ball log — the schema doesn't store a
+ * standalone "howOut" field on the batsmen sub-array, so this is
+ * reconstructed from the wicket-taking ball itself.
+ *
+ * Looks for the ball where isWicket === true AND batsmanOnStrike === name.
+ * Note: this assumes at most one wicket ball per batsman per innings,
+ * which is always true (a batsman is out once and only once).
+ *
+ * Returns "not out" if the batsman's isOut flag is false.
+ * Returns "did not bat" if somehow no batting record exists (defensive —
+ * should not normally happen since this is only called for entries
+ * already present in innings.batsmen).
+ */
+function getHowOutText(innings, batsmanEntry) {
+  if (!batsmanEntry) return 'did not bat';
+  if (!batsmanEntry.isOut) return 'not out';
+
+  const wicketBall = innings.balls.find(
+    (ball) => ball.isWicket && ball.batsmanOnStrike === batsmanEntry.name
+  );
+
+  if (!wicketBall) {
+    // isOut is true but no matching ball found — defensive fallback,
+    // shouldn't happen if ball log and batsmen array stay in sync.
+    return 'out';
+  }
+
+  switch (wicketBall.dismissal) {
+    case 'bowled':
+      return `b ${wicketBall.bowler}`;
+    case 'caught':
+      return `c b ${wicketBall.bowler}`;
+    case 'runout':
+      return 'Run Out';
+    default:
+      return 'out';
+  }
+}
+
+/**
+ * Counts 4s and 6s a given batsman hit during this innings, by scanning
+ * the ball log. Only counts balls of type 'run' (i.e. excludes wide,
+ * noball, legbye, bye, wicket balls) where batsmanOnStrike matches and
+ * runs is exactly 4 or 6 — matching how boundaries are actually scored
+ * off the bat (per the PRD addendum, runs off no-balls/extras are NOT
+ * credited to the batsman's personal tally).
+ *
+ * Returns { fours, sixes }.
+ */
+function countBoundaries(innings, name) {
+  let fours = 0;
+  let sixes = 0;
+
+  for (const ball of innings.balls) {
+    if (ball.type === 'run' && ball.batsmanOnStrike === name) {
+      if (ball.runs === 4) fours += 1;
+      else if (ball.runs === 6) sixes += 1;
+    }
+  }
+
+  return { fours, sixes };
+}
+
+/**
+ * Builds the full post-match scorecard for one or more innings — every
+ * batsman who batted (out or not out) with runs/balls/4s/6s/SR/howOut,
+ * and every bowler with full figures + economy.
+ *
+ * This is a pure read/derive function: it does NOT require any new
+ * schema fields. Fours, sixes, and dismissal text are all reconstructed
+ * from the existing `balls` array; everything else comes straight off
+ * the existing `batsmen` / `bowlers` sub-arrays.
+ *
+ * @param {Array} inningsArray - match.innings (array of 1 or 2 innings)
+ * @returns {Array} one scorecard object per innings:
+ *   {
+ *     battingTeam: string,
+ *     runs: number,
+ *     wickets: number,
+ *     overs: number,
+ *     batting: [{ name, runs, balls, fours, sixes, strikeRate, howOut }],
+ *     bowling: [{ name, overs, maidens, runsConceded, wickets, economy }],
+ *   }
+ */
+export function getFullScorecard(inningsArray) {
+  if (!Array.isArray(inningsArray)) return [];
+
+  return inningsArray.map((innings) => {
+    const batting = innings.batsmen.map((b) => {
+      const { fours, sixes } = countBoundaries(innings, b.name);
+      return {
+        name: b.name,
+        runs: b.runs,
+        balls: b.balls,
+        fours,
+        sixes,
+        strikeRate: getStrikeRate(b.runs, b.balls),
+        howOut: getHowOutText(innings, b),
+      };
+    });
+
+    const bowling = innings.bowlers.map((bw) => ({
+      name: bw.name,
+      overs: bw.overs,
+      maidens: bw.maidens,
+      runsConceded: bw.runsConceded,
+      wickets: bw.wickets,
+      economy: getEconomy(bw.runsConceded, bw.overs),
+    }));
+
+    return {
+      battingTeam: innings.battingTeam,
+      runs: innings.runs,
+      wickets: innings.wickets,
+      overs: innings.overs,
+      batting,
+      bowling,
+    };
+  });
+}

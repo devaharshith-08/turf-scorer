@@ -120,12 +120,14 @@ function OverTimeline({ innings }) {
 }
 
 // ─── Batsmen Panel ────────────────────────────────────────────────────────────
+// FIXED: no longer requires `innings` to exist before rendering. Names alone
+// (onStrike/nonStrike from opener selection) are enough to show the panel —
+// stats just default to 0/0 until the innings object exists server-side.
 function BatsmenPanel({ innings, onStrike, nonStrike }) {
-  if (!innings) return null;
   if (!onStrike && !nonStrike) return null;
 
   function getStats(name) {
-    const b = innings.batsmen.find((b) => b.name === name);
+    const b = innings?.batsmen?.find((b) => b.name === name);
     return b ? { runs: b.runs, balls: b.balls } : { runs: 0, balls: 0 };
   }
 
@@ -164,10 +166,12 @@ function BatsmenPanel({ innings, onStrike, nonStrike }) {
 }
 
 // ─── Bowler Panel ─────────────────────────────────────────────────────────────
+// FIXED: no longer requires `innings` to exist before rendering — same issue
+// and same fix as BatsmenPanel above.
 function BowlerPanel({ innings, bowler }) {
-  if (!innings || !bowler) return null;
+  if (!bowler) return null;
 
-  const b = innings.bowlers.find((b) => b.name === bowler);
+  const b = innings?.bowlers?.find((b) => b.name === bowler);
   const overs = b ? b.overs.toFixed(1) : '0.0';
   const runs = b ? b.runsConceded : 0;
   const wickets = b ? b.wickets : 0;
@@ -403,6 +407,29 @@ export default function ScorePage() {
     setInningsEnded(false);
   }
 
+  // PHASE 8 — Manual abandon. Requires a confirm step (window.confirm) since
+  // this ends the match irreversibly — no "undo" for abandonment the way
+  // there is for a single ball. Goes through the same offline-aware
+  // enqueueEvent path as every other write, so it's queued and synced
+  // even if the umpire is offline when they tap it. UI flips to the
+  // result screen immediately (optimistic) rather than waiting on sync.
+  function handleAbandon() {
+    const confirmed = window.confirm(
+      'Abandon this match? This cannot be undone — the match will be marked as completed with result "Match Abandoned".'
+    );
+    if (!confirmed) return;
+
+    const sequenceId = crypto.randomUUID();
+    enqueueEvent({ type: 'abandon', sequenceId });
+
+    setShowOpenerModal(false);
+    setShowWicketModal(false);
+    setShowOverModal(false);
+    setInningsEnded(false);
+    setInningsBreak(false);
+    setMatchResult('Match Abandoned');
+  }
+
   function handleOpenersConfirmed({ striker, nonStriker, bowler: chosenBowler }) {
     setOnStrike(striker);
     setNonStrike(nonStriker);
@@ -439,7 +466,17 @@ export default function ScorePage() {
 
       {/* ── Scoreboard header ── */}
       <div className="sticky top-0 bg-var(--background) z-10 py-3 border-b border-gray-700">
-        <p className="text-sm uppercase tracking-wide text-red-500 font-bold">YOU ARE THE UMPIRE</p>
+        <div className="flex items-center justify-between">
+          <p className="text-sm uppercase tracking-wide text-red-500 font-bold">YOU ARE THE UMPIRE</p>
+          {!matchResult && (
+            <button
+              onClick={handleAbandon}
+              className="text-xs px-3 py-1.5 rounded border border-red-700 text-red-400 hover:bg-red-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400"
+            >
+              Abandon Match
+            </button>
+          )}
+        </div>
         <h1 className="text-2xl font-bold">
           {innings ? `${innings.runs}/${innings.wickets}` : '0/0'}{' '}
           <span className="text-sm text-gray-400">

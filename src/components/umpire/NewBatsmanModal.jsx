@@ -2,10 +2,11 @@
 'use client';
 
 import { useState } from 'react';
+import { isDismissalAllowedOnFreeHit } from '@/lib/scoringLogic';
 
 const DISMISSAL_TYPES = ['bowled', 'caught', 'runout'];
 
-export default function NewBatsmanModal({ mode, battingPlayers, bowlingPlayers, onConfirm }) {
+export default function NewBatsmanModal({ mode, battingPlayers, bowlingPlayers, onConfirm, isFreeHit }) {
   const [dismissal, setDismissal] = useState(null);
   const [newBatsman, setNewBatsman] = useState(null);
   const [striker, setStriker] = useState(null);
@@ -89,20 +90,34 @@ export default function NewBatsmanModal({ mode, battingPlayers, bowlingPlayers, 
       <div className="bg-gray-900 rounded-xl p-5 w-full max-w-sm space-y-4">
         <h2 className="text-lg font-bold text-white">Wicket!</h2>
 
+        {isFreeHit && (
+          <div className="rounded-lg bg-yellow-500 text-black text-center font-bold py-2 px-3 text-sm">
+            FREE HIT — only Run Out is valid
+          </div>
+        )}
+
         <div>
           <p className="text-sm text-gray-400 mb-1">How was the batsman out?</p>
           <div className="flex gap-2">
-            {DISMISSAL_TYPES.map((d) => (
-              <button
-                key={d}
-                onClick={() => setDismissal(d)}
-                className={`px-3 py-2 rounded capitalize text-sm text-white ${
-                  dismissal === d ? 'bg-red-600' : 'bg-gray-700'
-                }`}
-              >
-                {d}
-              </button>
-            ))}
+            {DISMISSAL_TYPES.map((d) => {
+              const allowed = !isFreeHit || isDismissalAllowedOnFreeHit(d);
+              return (
+                <div key={d} className="flex flex-col items-center">
+                  <button
+                    disabled={!allowed}
+                    onClick={() => setDismissal(d)}
+                    className={`px-3 py-2 rounded capitalize text-sm text-white disabled:opacity-30 ${
+                      dismissal === d ? 'bg-red-600' : 'bg-gray-700'
+                    }`}
+                  >
+                    {d}
+                  </button>
+                  {!allowed && (
+                    <span className="text-[10px] text-gray-500 mt-1">Not allowed on Free Hit</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 

@@ -5,10 +5,12 @@ import {
   applyBallToInnings,
   recomputeInningsFromBalls,
   isInningsComplete,
+  isDismissalAllowedOnFreeHit,
+  getEligibleBowlers,
 } from '@/lib/scoringLogic';
 import { triggerMatchUpdate, triggerGlobalUpdate } from '@/lib/pusherServer';
 
-const VALID_EVENT_TYPES = ['run', 'wide', 'noball', 'legbye', 'wicket', 'undo'];
+const VALID_EVENT_TYPES = ['run', 'wide', 'noball', 'legbye', 'bye', 'wicket', 'undo', 'abandon'];
 
 function getFirstBattingTeam(toss) {
   if (toss.decision === 'bat') return toss.winner;
@@ -74,6 +76,44 @@ export async function POST(request, { params }) {
     return Response.json({ error: 'Match already completed' }, { status: 400 });
   }
 
+  // PHASE 8 — Manual abandon. Treated as a standalone, immediate action:
+  // does not go through the ball-processing loop below, does not touch
+  // innings/strike/bowler state, and short-circuits with its own
+  // save + broadcast + response. If an 'abandon' event is present in the
+  // batch, it wins outright — any other events sent alongside it are
+  // ignored, since abandoning mid-batch makes those irrelevant anyway.
+  const abandonEvent = events.find((e) => e.type === 'abandon');
+  if (abandonEvent) {
+    match.status = 'completed';
+    match.result = 'Match Abandoned';
+    match.completedAt = new Date();
+    await match.save();
+
+    await triggerMatchUpdate(matchId, {
+      matchId: match.matchId,
+      status: match.status,
+      result: match.result,
+      inningsJustCompleted: false,
+      abandoned: true,
+    });
+
+    await triggerGlobalUpdate({
+      matchId: match.matchId,
+      status: match.status,
+      teamAName: match.teams.teamA.name,
+      teamBName: match.teams.teamB.name,
+      result: match.result,
+    });
+
+    return Response.json({
+      match,
+      appliedSequenceIds: [abandonEvent.sequenceId].filter(Boolean),
+      rejectedEvents: [],
+      inningsJustCompleted: false,
+      abandoned: true,
+    });
+  }
+
   // Capture status before any mutation below, so we know after saving
   // whether a global (dashboard) broadcast is needed.
   const statusBeforeThisRequest = match.status;
@@ -125,6 +165,42 @@ export async function POST(request, { params }) {
       continue;
     }
 
+    const previousBall = inningsObj.balls[inningsObj.balls.length - 1] || null;
+
+    // PHASE 7 — Free Hit dismissal guard (server is the authority; client
+    // check in NewBatsmanModal is just for UX, this is what actually counts).
+    if (event.isWicket && previousBall && previousBall.type === 'noball') {
+      if (!isDismissalAllowedOnFreeHit(event.dismissal)) {
+        rejectedEvents.push({
+          sequenceId: event.sequenceId,
+          reason: 'invalid dismissal on Free Hit',
+        });
+        continue;
+      }
+    }
+
+    // PHASE 7 — bowler no-repeat rule (server is the authority).
+    // "Start of a new over" = the innings' overs count is currently a
+    // whole number (the previous over just finished) and at least one
+    // ball has already been bowled this innings.
+    const overJustCompleted = inningsObj.balls.length > 0 && inningsObj.overs % 1 === 0;
+    if (overJustCompleted && previousBall) {
+      const previousOverBowler = previousBall.bowler;
+      if (event.bowler === previousOverBowler) {
+        const bowlingTeamKey = otherTeam(inningsObj.battingTeam);
+        const bowlingTeamPlayers = match.teams[bowlingTeamKey].players;
+        const eligible = getEligibleBowlers(bowlingTeamPlayers, previousOverBowler);
+        const ruleWaived = eligible.length === bowlingTeamPlayers.length;
+        if (!ruleWaived) {
+          rejectedEvents.push({
+            sequenceId: event.sequenceId,
+            reason: 'bowler cannot bowl consecutive overs',
+          });
+          continue;
+        }
+      }
+    }
+
     const updatedInnings = applyBallToInnings(inningsObj, event);
     match.innings[match.innings.length - 1] = updatedInnings;
     match.markModified('innings');
@@ -153,6 +229,10 @@ export async function POST(request, { params }) {
     } else {
       match.status = 'completed';
       match.result = computeResult(match);
+      // Starts the 36-hour TTL countdown (see Match.js schema index) —
+      // this is the ONLY place completedAt gets set for a normally-finished
+      // match (abandon has its own early-exit branch above).
+      match.completedAt = new Date();
     }
   }
 

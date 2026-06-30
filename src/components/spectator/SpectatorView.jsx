@@ -6,7 +6,8 @@
 //   2. Main Scoreboard
 //   3. Over Ribbon  OR  Result Banner (if completed)
 //   4. Chase Calculator (2nd innings only, while live)
-//   5. Stat Tables (batting + bowling)
+//   5. Stat Tables (batting + bowling) — LIVE: current innings only
+//      OR Full Scorecard (both innings, all players) — COMPLETED
 //
 // Phase 6: Pusher signals an update on `match-${matchId}` -> we refetch
 // full match state from GET /api/match/[matchId] (same route used for
@@ -15,6 +16,11 @@
 // derived-data logic below working off one full, consistent match object,
 // since the broadcast payload is deliberately too lean (5KB NFR) to carry
 // full ball history / batsmen / bowler arrays.
+//
+// Post-completion addition: once status === 'completed', the stat tables
+// section is replaced by FullScorecard, which shows every batsman/bowler
+// across BOTH innings (not just the current/last one) — derived from
+// match.innings via getFullScorecard in spectatorStats.js.
 
 'use client';
 
@@ -26,6 +32,7 @@ import ChaseCalculator from '@/components/spectator/ChaseCalculator';
 import BatsmenStatTable from '@/components/spectator/BatsmenStatTable';
 import BowlerStatTable from '@/components/spectator/BowlerStatTable';
 import ResultBanner from '@/components/spectator/ResultBanner';
+import FullScorecard from '@/components/spectator/FullScorecard';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -200,12 +207,17 @@ export default function SpectatorView({ initialMatch, matchId }) {
         <ChaseCalculator chaseInfo={chaseInfo} />
       )}
 
-      {/* 4 — Stat Tables */}
-      {currentInnings && (
-        <div className="space-y-4">
-          <BatsmenStatTable batsmen={currentInnings.batsmen ?? []} />
-          <BowlerStatTable  bowlers={currentInnings.bowlers ?? []} />
-        </div>
+      {/* 4 — Stat Tables (live, current innings only) OR Full Scorecard
+             (completed, both innings, every player) */}
+      {isCompleted ? (
+        <FullScorecard match={match} />
+      ) : (
+        currentInnings && (
+          <div className="space-y-4">
+            <BatsmenStatTable batsmen={currentInnings.batsmen ?? []} />
+            <BowlerStatTable  bowlers={currentInnings.bowlers ?? []} />
+          </div>
+        )
       )}
     </div>
   );

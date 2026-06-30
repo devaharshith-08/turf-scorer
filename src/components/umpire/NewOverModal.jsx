@@ -2,24 +2,34 @@
 'use client';
 
 import { useState } from 'react';
+import { getEligibleBowlers } from '@/lib/scoringLogic';
 
 export default function NewOverModal({ bowlingPlayers, currentBowler, onConfirm }) {
   const [nextBowler, setNextBowler] = useState(null);
   const [swapStrike, setSwapStrike] = useState(true);
 
-  // NOTE: deliberately NOT filtering out currentBowler from this list.
-  // "Bowler can't bowl consecutive overs" is a Phase 7 turf-specific rule
-  // (per your roadmap) - out of scope here, so any bowler can be reselected.
+  // PHASE 7 — bowler no-repeat rule. Filters out currentBowler. If that
+  // leaves zero eligible bowlers (very small roster), falls back to
+  // allowing the full list again so the match isn't blocked.
+  const eligibleBowlers = getEligibleBowlers(bowlingPlayers, currentBowler);
+  const ruleWaived =
+    eligibleBowlers.length === bowlingPlayers.length && bowlingPlayers.includes(currentBowler);
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
       <div className="bg-gray-900 rounded-xl p-5 w-full max-w-sm space-y-4">
         <h2 className="text-lg font-bold text-white">Over Complete</h2>
 
+        {ruleWaived && (
+          <div className="rounded-lg bg-yellow-500 text-black text-center font-semibold py-2 px-3 text-sm">
+            No other bowler available — repeat bowling allowed this once.
+          </div>
+        )}
+
         <div>
           <p className="text-sm text-gray-400 mb-1">Select next bowler</p>
           <div className="flex flex-wrap gap-2">
-            {bowlingPlayers.map((p) => (
+            {eligibleBowlers.map((p) => (
               <button
                 key={p}
                 onClick={() => setNextBowler(p)}

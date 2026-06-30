@@ -50,6 +50,42 @@ function incrementOvers(overs, legalBallBowled) {
 }
 
 /**
+ * PHASE 7 — Free Hit detection.
+ * A ball is a Free Hit if the immediately preceding ball in the innings
+ * was a no-ball. `previousBall` is the last entry in innings.balls BEFORE
+ * the current ball is pushed (or null/undefined if this is the first ball).
+ */
+export function isFreeHit(previousBall) {
+  return !!previousBall && previousBall.type === 'noball';
+}
+
+/**
+ * PHASE 7 — Free Hit dismissal guard.
+ * On a Free Hit, a batsman can only be dismissed by Run Out. Bowled and
+ * Caught are not allowed to remove the batsman.
+ */
+export function isDismissalAllowedOnFreeHit(dismissalType) {
+  return dismissalType === 'runout';
+}
+
+/**
+ * PHASE 7 — Bowler no-repeat rule.
+ * Returns the list of players allowed to bowl the next over: everyone on
+ * the bowling team EXCEPT whoever just bowled the previous over.
+ *
+ * FALLBACK (per project decision): if removing the previous bowler leaves
+ * an empty list (very small roster), the rule is waived and the full
+ * player list is returned instead, so the match isn't blocked.
+ */
+export function getEligibleBowlers(players, previousOverBowler) {
+  const eligible = players.filter((name) => name !== previousOverBowler);
+  if (eligible.length === 0) {
+    return players;
+  }
+  return eligible;
+}
+
+/**
  * Applies ONE ball event to an innings object, mutating and returning it.
  * `innings` should be a plain JS object (e.g. a Mongoose subdocument
  * converted with .toObject(), or already-plain client state).
@@ -76,6 +112,11 @@ export function applyBallToInnings(innings, event) {
 
   const legalBall = isLegalBall(type);
 
+  // PHASE 7 — work out Free Hit status from the ball that came before this
+  // one, BEFORE we push the new ball onto innings.balls.
+  const previousBall = innings.balls[innings.balls.length - 1] || null;
+  const freeHit = isFreeHit(previousBall);
+
   // --- Team totals ---
   innings.runs += runs;
   if (isWicket) innings.wickets += 1;
@@ -98,13 +139,14 @@ export function applyBallToInnings(innings, event) {
   }
 
   // --- Bowler stats ---
-  // ASSUMPTION: leg byes are not conceded runs against the bowler (they're
-  // fielding extras). Run-outs are not credited as a bowler's wicket.
+  // ASSUMPTION: leg byes AND byes are not conceded runs against the bowler
+  // (both are fielding extras, not the bowler's fault). Run-outs are not
+  // credited as a bowler's wicket.
   const bowlerStat = getOrCreateBowler(innings.bowlers, bowler);
   if (legalBall) {
     bowlerStat.overs = incrementOvers(bowlerStat.overs, true);
   }
-  if (type !== 'legbye') {
+  if (type !== 'legbye' && type !== 'bye') {
     bowlerStat.runsConceded += runs;
   }
   if (isWicket && dismissal !== 'runout') {
@@ -117,6 +159,7 @@ export function applyBallToInnings(innings, event) {
     type,
     runs,
     isWicket,
+    isFreeHit: freeHit,
     dismissal,
     batsmanOnStrike,
     bowler,

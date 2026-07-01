@@ -1,4 +1,5 @@
 // src/lib/pusherServer.js
+import "server-only";
 import Pusher from "pusher";
 
 // Singleton pattern — same idea as dbConnect.js.

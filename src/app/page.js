@@ -2,6 +2,16 @@ import connectDb from "@/lib/dbConnect";
 import Match from "@/models/Match";
 import DashboardClient from "@/components/dashboard/DashboardClient";
 
+// This page reads live data straight from MongoDB via Mongoose (not
+// fetch()), so Next.js can't auto-detect it as dynamic and may cache the
+// rendered output (Full Route Cache) and/or serve a stale copy on
+// client-side navigations (Router Cache). That staleness is exactly what
+// was causing a genuinely live match to vanish from Live Matches after
+// navigating away and back. Forcing dynamic rendering makes this page
+// re-run fresh on every request/navigation.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 // Any 'live' match with no ball scored in the last 30 minutes is treated
 // as abandoned. Checked on every dashboard load (no cron available on
 // Vercel) — cheap because it only touches matches that are actually

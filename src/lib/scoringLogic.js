@@ -51,9 +51,6 @@ function incrementOvers(overs, legalBallBowled) {
 
 /**
  * PHASE 7 — Free Hit detection.
- * A ball is a Free Hit if the immediately preceding ball in the innings
- * was a no-ball. `previousBall` is the last entry in innings.balls BEFORE
- * the current ball is pushed (or null/undefined if this is the first ball).
  */
 export function isFreeHit(previousBall) {
   return !!previousBall && previousBall.type === 'noball';
@@ -61,8 +58,6 @@ export function isFreeHit(previousBall) {
 
 /**
  * PHASE 7 — Free Hit dismissal guard.
- * On a Free Hit, a batsman can only be dismissed by Run Out. Bowled and
- * Caught are not allowed to remove the batsman.
  */
 export function isDismissalAllowedOnFreeHit(dismissalType) {
   return dismissalType === 'runout';
@@ -70,12 +65,6 @@ export function isDismissalAllowedOnFreeHit(dismissalType) {
 
 /**
  * PHASE 7 — Bowler no-repeat rule.
- * Returns the list of players allowed to bowl the next over: everyone on
- * the bowling team EXCEPT whoever just bowled the previous over.
- *
- * FALLBACK (per project decision): if removing the previous bowler leaves
- * an empty list (very small roster), the rule is waived and the full
- * player list is returned instead, so the match isn't blocked.
  */
 export function getEligibleBowlers(players, previousOverBowler) {
   const eligible = players.filter((name) => name !== previousOverBowler);
@@ -87,11 +76,14 @@ export function getEligibleBowlers(players, previousOverBowler) {
 
 /**
  * Applies ONE ball event to an innings object, mutating and returning it.
- * `innings` should be a plain JS object (e.g. a Mongoose subdocument
- * converted with .toObject(), or already-plain client state).
  *
  * event shape (matches PRD §4 ball schema):
- * { sequenceId, type, runs, isWicket, dismissal, batsmanOnStrike, bowler }
+ * { sequenceId, type, runs, isWicket, dismissal, batsmanOnStrike, nonStriker, bowler }
+ *
+ * BUGFIX (Bug 1): `nonStriker` is now part of the event. Both batsmen are
+ * registered in innings.batsmen[] as soon as they're part of a ball event
+ * (not just whoever faces it), and innings.onStrike / innings.nonStriker
+ * are persisted so any client can read current strike state directly.
  */
 export function applyBallToInnings(innings, event) {
   const {
@@ -101,6 +93,7 @@ export function applyBallToInnings(innings, event) {
     isWicket = false,
     dismissal = null,
     batsmanOnStrike,
+    nonStriker = null,
     bowler,
   } = event;
 
@@ -123,10 +116,6 @@ export function applyBallToInnings(innings, event) {
   innings.overs = incrementOvers(innings.overs, legalBall);
 
   // --- Batsman stats ---
-  // ASSUMPTION: a "ball faced" is counted for everything except a wide
-  // (wides don't count as a ball faced by the batsman). No-balls DO count
-  // as a ball faced, but any runs off a no-ball are extras, not credited
-  // to the batsman's run tally (per PRD Page 3 note).
   const batsman = getOrCreateBatsman(innings.batsmen, batsmanOnStrike);
   if (type !== 'wide') {
     batsman.balls += 1;
@@ -138,10 +127,18 @@ export function applyBallToInnings(innings, event) {
     batsman.isOut = true;
   }
 
+  // BUGFIX (Bug 1): register the non-striker too, so they exist in
+  // batsmen[] even before they personally face a ball. No stat increments —
+  // just ensures they show up in spectator/umpire views.
+  if (nonStriker) {
+    getOrCreateBatsman(innings.batsmen, nonStriker);
+  }
+
+  // BUGFIX (Bug 1): persist current strike state on the innings itself.
+  innings.onStrike = batsmanOnStrike;
+  innings.nonStriker = nonStriker;
+
   // --- Bowler stats ---
-  // ASSUMPTION: leg byes AND byes are not conceded runs against the bowler
-  // (both are fielding extras, not the bowler's fault). Run-outs are not
-  // credited as a bowler's wicket.
   const bowlerStat = getOrCreateBowler(innings.bowlers, bowler);
   if (legalBall) {
     bowlerStat.overs = incrementOvers(bowlerStat.overs, true);
@@ -162,6 +159,7 @@ export function applyBallToInnings(innings, event) {
     isFreeHit: freeHit,
     dismissal,
     batsmanOnStrike,
+    nonStriker,
     bowler,
   });
 
@@ -170,9 +168,6 @@ export function applyBallToInnings(innings, event) {
 
 /**
  * Rebuilds an innings completely from its balls[] array.
- * This is what powers Undo: drop the last ball from the array, then call
- * this to recompute every aggregate (runs/wickets/overs/batsmen/bowlers)
- * from scratch, instead of trying to "subtract" the undone ball's effect.
  */
 export function recomputeInningsFromBalls(innings) {
   const originalBalls = innings.balls;
@@ -182,6 +177,8 @@ export function recomputeInningsFromBalls(innings) {
     runs: 0,
     wickets: 0,
     overs: 0,
+    onStrike: null,
+    nonStriker: null,
     batsmen: [],
     bowlers: [],
     balls: [],
@@ -194,29 +191,13 @@ export function recomputeInningsFromBalls(innings) {
   return rebuilt;
 }
 
-/**
- * Determines whether the current innings has reached its end, respecting
- * the lastBatsmanStanding setting.
- *
- * - lastBatsmanStanding = false: innings ends once `wickets` reaches
- *   settings.totalWickets (playerCount - 1), OR overs run out.
- * - lastBatsmanStanding = true: innings ends only once EVERY player on the
- *   batting team is out (wickets >= totalPlayersOnBattingTeam), OR overs
- *   run out.
- *
- * `totalPlayersOnBattingTeam` must be passed in by the caller (it's
- * teams.teamA.players.length or teams.teamB.players.length depending on
- * which team is currently batting) - this function has no knowledge of
- * the match document, only the innings + settings.
- */
-
 export function legalBallsFromOvers(overs) {
   const wholeOvers = Math.floor(overs);
   const ballsIntoOver = Math.round((overs % 1) * 10);
   return wholeOvers * 6 + ballsIntoOver;
 }
+
 export function isInningsComplete(innings, settings, totalPlayersOnBattingTeam) {
- 
   const legalBallsBowled = legalBallsFromOvers(innings.overs);
   const oversLimitReached = legalBallsBowled >= settings.totalOvers * 6;
 

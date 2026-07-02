@@ -214,7 +214,7 @@ export default function SpectatorView({ initialMatch, matchId }) {
       ) : (
         currentInnings && (
           <div className="space-y-4">
-            <BatsmenStatTable batsmen={currentInnings.batsmen ?? []} />
+            <BatsmenStatTable batsmen={currentInnings.batsmen ?? []} onStrike={currentInnings.onStrike} />
             <BowlerStatTable  bowlers={currentInnings.bowlers ?? []} />
           </div>
         )

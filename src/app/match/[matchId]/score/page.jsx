@@ -1,4 +1,3 @@
-// src/app/match/[matchId]/score/page.js
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
@@ -330,12 +329,18 @@ export default function ScorePage() {
           runs: 0,
           wickets: 0,
           overs: 0,
+          onStrike: null,
+          nonStriker: null,
           batsmen: [],
           bowlers: [],
         };
       }
 
-      const fullEvent = { ...eventPartial, batsmanOnStrike: onStrike, bowler };
+      // BUGFIX (Bug 1): include nonStriker on the event so scoringLogic
+      // registers both batsmen in innings.batsmen[] and persists current
+      // strike state on the innings itself (onStrike/nonStriker), instead
+      // of only ever registering whoever faces the ball.
+      const fullEvent = { ...eventPartial, batsmanOnStrike: onStrike, nonStriker: nonStrike, bowler };
       const sequenceId = crypto.randomUUID();
 
       const inningsCopy = JSON.parse(JSON.stringify(innings));
@@ -555,7 +560,10 @@ export default function ScorePage() {
         <NewBatsmanModal
           mode="replacement"
           battingPlayers={battingTeamPlayers().filter(
-            (p) => !innings.batsmen.some((b) => b.name === p && b.isOut) && p !== nonStrike
+            (p) =>
+              !innings.batsmen.some((b) => b.name === p && b.isOut) &&
+              p !== nonStrike &&
+              p !== onStrike
           )}
           onConfirm={handleWicketConfirmed}
         />

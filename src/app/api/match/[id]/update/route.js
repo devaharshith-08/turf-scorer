@@ -1,4 +1,3 @@
-// src/app/api/match/[id]/update/route.js
 import dbConnect from '@/lib/dbConnect';
 import Match from '@/models/Match';
 import {
@@ -27,6 +26,10 @@ function createEmptyInnings(battingTeam) {
     runs: 0,
     wickets: 0,
     overs: 0,
+    // BUGFIX (Bug 1): initialize strike-state fields so they exist from
+    // innings creation, not just after the first ball is applied.
+    onStrike: null,
+    nonStriker: null,
     balls: [],
     batsmen: [],
     bowlers: [],

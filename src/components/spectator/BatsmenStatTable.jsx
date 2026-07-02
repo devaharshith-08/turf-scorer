@@ -8,13 +8,17 @@
 // Note: field is `balls` (not `ballsFaced`) per scoringLogic.js.
 //
 // Strike Rate computed here: (runs / balls) * 100, rounded to 1 dp.
+//
+// BUGFIX (Bug 1): now also accepts `onStrike` (the batsman's name currently
+// on strike, from innings.onStrike) and renders a ⭐ marker next to that
+// row — same convention as the umpire's BatsmenPanel.
 
 function strikeRate(runs, balls) {
   if (!balls || balls === 0) return '–';
   return ((runs / balls) * 100).toFixed(1);
 }
 
-export default function BatsmenStatTable({ batsmen = [] }) {
+export default function BatsmenStatTable({ batsmen = [], onStrike = null }) {
   if (batsmen.length === 0) {
     return (
       <div className="rounded-xl bg-white/10 p-4 text-center text-sm opacity-60">
@@ -44,6 +48,9 @@ export default function BatsmenStatTable({ batsmen = [] }) {
               className="border-t border-white/10 hover:bg-white/5"
             >
               <td className="px-4 py-2 font-medium">
+                {b.name === onStrike && (
+                  <span className="mr-1 text-yellow-400">⭐</span>
+                )}
                 {b.name}
                 {b.isOut && (
                   <span className="ml-2 text-xs opacity-40">(out)</span>

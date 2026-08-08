@@ -1,10 +1,11 @@
-# Turf Score 🏏
+# StumpLine🏏
 
 A full-stack, real-time cricket live-scoring web app with three dedicated roles — **dashboard** (match management), **umpire** (live scoring), and **spectator** (live view) — built offline-first so a scorer never loses a ball, even on a patchy connection at the ground.
 
 
 
-**[https://turf-scorer-rho.vercel.app/](#)** · **[https://github.com/devaharshith-08/turf-scorer](#)**
+**[https://turf-scorer-rho.vercel.app/](#)** ·
+**[https://github.com/devaharshith-08/turf-scorer](#)**
 
 ---
 

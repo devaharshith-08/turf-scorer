@@ -66,13 +66,6 @@ Run the dev server:
 npm run dev
 ```
 
-Visit [http://localhost:3000](http://localhost:3000).
-
-Optionally seed sample live/completed matches for the dashboard:
-
-```bash
-node scripts/seed.js
-```
 
 ## Architecture Overview
 

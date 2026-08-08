@@ -109,6 +109,4 @@ Spectator/Dashboard clients refetch full state from MongoDB
 - `getCurrentOverBalls` is implemented twice with subtly different logic (`spectatorStats.js` and inline in `SpectatorView.jsx`) — a refactor candidate to share one implementation.
 - `BowlerStatTable.jsx` reimplements economy-rate calculation rather than reusing the shared `getEconomy` utility from `spectatorStats.js`.
 
-## License
 
-<!-- e.g. MIT — add your preferred license here -->
